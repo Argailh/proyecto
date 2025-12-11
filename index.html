@@ -3,38 +3,395 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hola Mundo PWA</title>
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#4CAF50">
+    <meta name="theme-color" content="#F59E0B">
+    <title>EcuTour</title>
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body {
-            font-family: sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            background-color: #f0f0f0;
+        body { font-family: -apple-system, sans-serif; }
+        .ecuador-bg { 
+            background-color: #F5E6D3;
+            background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23E5C896' fill-opacity='0.3'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
         }
-        h1 {
-            color: #333;
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
+        .btn { transition: transform 0.2s; }
+        .btn:active { transform: scale(0.95); }
     </style>
 </head>
-<body>
-    <h1>Hola Mundo 🌎</h1>
+<body class="ecuador-bg">
+    <div id="app" class="max-w-md mx-auto min-h-screen"></div>
 
     <script>
-        // Registro del Service Worker
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('./sw.js')
-            .then(reg => console.log('Service Worker registrado', reg))
-            .catch(err => console.warn('Error al registrar SW', err));
+        const SHEETS_URL = 'TU_GOOGLE_SHEETS_URL'; // Reemplazar
+
+        let estado = {
+            pantalla: 'login',
+            usuario: null,
+            puntos: 0,
+            favoritos: [],
+            historial: [],
+            lugarSeleccionado: null
+        };
+
+        const lugares = [
+            { id: 1, nombre: 'Mitad del Mundo', icono: '🌍', lat: 15, lng: 20, rating: 4.8, puntos: 100, desc: 'Monumento ecuatorial' },
+            { id: 2, nombre: 'Centro Histórico', icono: '🏛️', lat: 50, lng: 50, rating: 4.9, puntos: 80, desc: 'Patrimonio UNESCO' },
+            { id: 3, nombre: 'TelefériQo', icono: '🚡', lat: 25, lng: 80, rating: 4.9, puntos: 110, desc: 'Vista panorámica' },
+            { id: 4, nombre: 'La Ronda', icono: '🍲', lat: 65, lng: 30, rating: 4.8, puntos: 90, desc: 'Calle colonial' },
+            { id: 5, nombre: 'Parque La Carolina', icono: '🌳', lat: 30, lng: 60, rating: 4.6, puntos: 60, desc: 'Parque urbano' }
+        ];
+
+        function guardar() {
+            localStorage.setItem('ecutour', JSON.stringify(estado));
         }
+
+        function cargar() {
+            const data = localStorage.getItem('ecutour');
+            if (data) {
+                estado = JSON.parse(data);
+                if (estado.usuario) estado.pantalla = 'home';
+            }
+        }
+
+        async function registrar(nombre, email, pass) {
+            const usuarios = JSON.parse(localStorage.getItem('usuarios') || '[]');
+            usuarios.push({ nombre, email, pass });
+            localStorage.setItem('usuarios', JSON.stringify(usuarios));
+            
+            estado.usuario = { nombre, email };
+            estado.puntos = 50;
+            estado.historial.push({ pts: 50, desc: 'Bienvenida', fecha: new Date().toLocaleString() });
+            guardar();
+            estado.pantalla = 'home';
+            render();
+            alerta('¡Bienvenido! +50 puntos 🎉');
+        }
+
+        function login(email, pass) {
+            const usuarios = JSON.parse(localStorage.getItem('usuarios') || '[]');
+            const user = usuarios.find(u => u.email === email && u.pass === pass);
+            
+            if (user) {
+                const saved = localStorage.getItem('ecutour');
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    if (parsed.usuario?.email === email) {
+                        estado = parsed;
+                        estado.pantalla = 'home';
+                        render();
+                        alerta('¡Bienvenido de vuelta! 👋');
+                        return;
+                    }
+                }
+                estado.usuario = user;
+                estado.puntos = 50;
+                estado.pantalla = 'home';
+                guardar();
+                render();
+                alerta('¡Bienvenido! 👋');
+            } else {
+                alerta('Usuario o contraseña incorrectos');
+            }
+        }
+
+        function sumarPuntos(pts, desc) {
+            estado.puntos += pts;
+            estado.historial.unshift({ pts, desc, fecha: new Date().toLocaleString() });
+            guardar();
+            alerta(`+${pts} puntos ⭐ ${desc}`);
+        }
+
+        function alerta(msg) {
+            const div = document.createElement('div');
+            div.className = 'fixed top-4 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-full shadow-lg z-50 text-sm';
+            div.textContent = msg;
+            document.body.appendChild(div);
+            setTimeout(() => div.remove(), 3000);
+        }
+
+        function irA(pant, datos = {}) {
+            estado.pantalla = pant;
+            Object.assign(estado, datos);
+            render();
+            window.scrollTo(0, 0);
+        }
+
+        function Logo() {
+            return `
+                <svg class="w-48 mx-auto" viewBox="0 0 300 150">
+                    <polygon points="80,60 110,20 140,60" fill="#2C5F7C"/>
+                    <polygon points="120,60 150,10 180,60" fill="#1E4A5F"/>
+                    <polygon points="160,60 190,25 220,60" fill="#2C5F7C"/>
+                    <polygon points="145,25 150,10 155,25" fill="#E5E7EB"/>
+                    <circle cx="150" cy="35" r="18" fill="#F59E0B"/>
+                    <rect x="60" y="60" width="180" height="15" fill="#10B981" rx="3"/>
+                    <text x="150" y="110" font-size="38" font-weight="bold" text-anchor="middle">
+                        <tspan fill="#F59E0B">ECU</tspan><tspan fill="#3B82F6">TOUR</tspan>
+                    </text>
+                </svg>
+            `;
+        }
+
+        function PantallaLogin() {
+            return `
+                <div class="min-h-screen flex items-center justify-center p-4">
+                    <div class="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md">
+                        ${Logo()}
+                        <p class="text-center text-gray-600 my-4">Tu aventura en Ecuador</p>
+                        
+                        <div id="formLogin">
+                            <h3 class="font-bold text-xl mb-4">Iniciar Sesión</h3>
+                            <input id="loginEmail" type="email" placeholder="Email" class="w-full px-4 py-3 border-2 rounded-xl mb-3">
+                            <input id="loginPass" type="password" placeholder="Contraseña" class="w-full px-4 py-3 border-2 rounded-xl mb-4">
+                            <button onclick="handleLogin()" class="w-full bg-blue-600 text-white py-3 rounded-xl font-bold mb-3 btn">Entrar</button>
+                            <button onclick="mostrarReg()" class="w-full border-2 border-blue-600 text-blue-600 py-3 rounded-xl font-bold btn">Crear Cuenta</button>
+                        </div>
+                        
+                        <div id="formReg" style="display:none">
+                            <h3 class="font-bold text-xl mb-4">Crear Cuenta</h3>
+                            <input id="regNombre" type="text" placeholder="Nombre" class="w-full px-4 py-3 border-2 rounded-xl mb-3">
+                            <input id="regEmail" type="email" placeholder="Email" class="w-full px-4 py-3 border-2 rounded-xl mb-3">
+                            <input id="regPass" type="password" placeholder="Contraseña" class="w-full px-4 py-3 border-2 rounded-xl mb-4">
+                            <button onclick="handleReg()" class="w-full bg-green-600 text-white py-3 rounded-xl font-bold mb-3 btn">Registrarse +50pts</button>
+                            <button onclick="mostrarLogin()" class="w-full border-2 text-gray-600 py-3 rounded-xl font-bold btn">Ya tengo cuenta</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function PantallaHome() {
+            return `
+                <div class="p-4 pb-24">
+                    <div class="bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-2xl p-5 mb-4">
+                        <div class="flex justify-between mb-3">
+                            <div><div class="text-sm opacity-90">Hola,</div><div class="text-xl font-bold">${estado.usuario.nombre}</div></div>
+                            <div class="text-3xl">🏆</div>
+                        </div>
+                        <div class="bg-white/20 rounded-xl p-3">
+                            <div class="flex justify-between mb-2"><span>Puntos</span><span class="text-2xl font-bold">⭐ ${estado.puntos}</span></div>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-4 mb-6">
+                        <button onclick="irA('planes')" class="bg-blue-600 text-white p-6 rounded-2xl btn">
+                            <div class="text-4xl mb-2">📅</div><div class="font-bold">Planes</div>
+                        </button>
+                        <button onclick="irA('mapa')" class="bg-green-600 text-white p-6 rounded-2xl btn">
+                            <div class="text-4xl mb-2">🗺️</div><div class="font-bold">Mapa</div>
+                        </button>
+                    </div>
+                    
+                    <h3 class="font-bold text-xl mb-3">Lugares Destacados</h3>
+                    ${lugares.slice(0, 3).map(l => `
+                        <div onclick="irA('detalle', {lugarSeleccionado: ${l.id}})" class="bg-white p-4 rounded-xl mb-3 flex items-center cursor-pointer shadow">
+                            <div class="text-4xl mr-3">${l.icono}</div>
+                            <div class="flex-1">
+                                <div class="font-bold">${l.nombre}</div>
+                                <div class="text-sm text-gray-600">⭐ ${l.rating} • +${l.puntos}pts</div>
+                            </div>
+                            <div class="text-gray-400">›</div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function PantallaMapa() {
+            setTimeout(() => {
+                lugares.forEach(l => {
+                    const el = document.getElementById(`m${l.id}`);
+                    if (el) el.onclick = () => { estado.lugarSeleccionado = l.id; render(); };
+                });
+            }, 100);
+            
+            const sel = lugares.find(l => l.id === estado.lugarSeleccionado);
+            
+            return `
+                <div class="pb-24">
+                    <div class="bg-blue-600 text-white p-4 flex items-center">
+                        <button onclick="irA('home')" class="mr-3 text-2xl">‹</button>
+                        <h2 class="text-xl font-bold flex-1">Mapa Ecuador</h2>
+                        <div>⭐ ${estado.puntos}</div>
+                    </div>
+                    
+                    <div style="height:450px;position:relative;background:linear-gradient(135deg,#3B82F6,#1E40AF)">
+                        <svg width="100%" height="100%" viewBox="0 0 100 100" style="background:rgba(0,0,0,0.2)">
+                            ${lugares.map(l => `
+                                <g id="m${l.id}" style="cursor:pointer">
+                                    <circle cx="${l.lng}" cy="${l.lat}" r="5" fill="${sel?.id === l.id ? '#FCD34D' : '#FFF'}" stroke="#3B82F6" stroke-width="2.5"/>
+                                    <text x="${l.lng}" y="${l.lat-6}" text-anchor="middle" font-size="12" fill="white" style="text-shadow:2px 2px 4px #000">${l.icono}</text>
+                                </g>
+                            `).join('')}
+                        </svg>
+                    </div>
+                    
+                    ${sel ? `
+                        <div class="p-4 bg-white shadow-lg">
+                            <div class="flex mb-3">
+                                <div class="text-5xl mr-3">${sel.icono}</div>
+                                <div class="flex-1">
+                                    <h3 class="font-bold text-lg">${sel.nombre}</h3>
+                                    <p class="text-sm text-gray-600">${sel.desc}</p>
+                                    <div class="text-sm">⭐ ${sel.rating} • <span class="text-green-600 font-bold">+${sel.puntos}pts</span></div>
+                                </div>
+                            </div>
+                            <button onclick="irA('detalle', {lugarSeleccionado: ${sel.id}})" class="w-full bg-blue-600 text-white py-3 rounded-xl font-bold btn">Ver Detalles</button>
+                        </div>
+                    ` : `<div class="p-4 text-center text-white bg-blue-600/80"><p class="font-semibold">👆 Toca un marcador</p></div>`}
+                </div>
+            `;
+        }
+
+        function PantallaDetalle() {
+            const lugar = lugares.find(l => l.id === estado.lugarSeleccionado);
+            if (!lugar) return '';
+            
+            return `
+                <div class="pb-32">
+                    <div class="h-56 bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center relative">
+                        <button onclick="irA('home')" class="absolute top-4 left-4 bg-white p-3 rounded-full shadow-lg text-xl">‹</button>
+                        <div class="text-9xl">${lugar.icono}</div>
+                    </div>
+                    <div class="p-5 bg-white">
+                        <h2 class="text-2xl font-bold mb-2">${lugar.nombre}</h2>
+                        <div class="text-sm mb-4">⭐ ${lugar.rating} <span class="bg-green-100 text-green-700 px-2 py-1 rounded-full font-bold ml-2">+${lugar.puntos}pts</span></div>
+                        <p class="text-gray-700 mb-4">${lugar.desc}</p>
+                    </div>
+                    <div class="fixed bottom-20 left-0 right-0 p-4 bg-white border-t">
+                        <button onclick="sumarPuntos(${lugar.puntos}, 'Visitaste ${lugar.nombre}'); irA('home')" class="w-full bg-green-600 text-white py-4 rounded-xl font-bold btn">
+                            Visitar y Ganar ${lugar.puntos} Puntos
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function PantallaPlanes() {
+            return `
+                <div class="p-4 pb-24">
+                    <div class="flex items-center mb-4">
+                        <button onclick="irA('home')" class="mr-3 text-2xl">‹</button>
+                        <h2 class="text-2xl font-bold flex-1">Planes</h2>
+                        <div>⭐ ${estado.puntos}</div>
+                    </div>
+                    
+                    ${[
+                        {nombre: 'Plan Familiar', desc: 'Para toda la familia', pts: 200, icono: '👨‍👩‍👧‍👦', precio: '$150'},
+                        {nombre: 'Plan Romántico', desc: 'Experiencia para parejas', pts: 250, icono: '💑', precio: '$200'},
+                        {nombre: 'Aventura Cultural', desc: 'Historia y cultura', pts: 180, icono: '🎭', precio: '$120'}
+                    ].map(p => `
+                        <div class="bg-white rounded-2xl shadow-md p-5 mb-4">
+                            <div class="flex mb-3">
+                                <div class="text-5xl mr-3">${p.icono}</div>
+                                <div class="flex-1">
+                                    <h3 class="font-bold text-lg">${p.nombre}</h3>
+                                    <p class="text-sm text-gray-600 mb-2">${p.desc}</p>
+                                    <div class="text-sm">💵 ${p.precio} • <span class="bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full font-bold">+${p.pts}pts</span></div>
+                                </div>
+                            </div>
+                            <button onclick="sumarPuntos(${p.pts}, 'Plan ${p.nombre}'); alerta('¡Plan confirmado! 🎉')" class="w-full bg-blue-600 text-white py-3 rounded-xl font-bold btn">
+                                Completar Plan
+                            </button>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function PantallaPerfil() {
+            return `
+                <div class="p-4 pb-24">
+                    <h2 class="text-2xl font-bold mb-6">Mi Perfil</h2>
+                    <div class="bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-2xl p-6 mb-6 text-center">
+                        <div class="w-20 h-20 bg-white rounded-full mx-auto mb-3 flex items-center justify-center text-5xl">🏆</div>
+                        <h3 class="font-bold text-xl">${estado.usuario.nombre}</h3>
+                        <p class="text-sm opacity-90 mb-3">${estado.usuario.email}</p>
+                        <div class="bg-white/20 rounded-xl p-3">
+                            <div class="text-3xl font-bold">⭐ ${estado.puntos}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white rounded-2xl shadow-md p-4 mb-4">
+                        <h3 class="font-bold mb-3">📊 Historial</h3>
+                        <div class="max-h-64 overflow-y-auto">
+                            ${estado.historial.length === 0 ? '<p class="text-gray-500 text-sm text-center py-4">Sin actividad</p>' : ''}
+                            ${estado.historial.slice(0, 10).map(h => `
+                                <div class="flex justify-between text-sm border-b pb-2 mb-2">
+                                    <div><div class="font-medium">${h.desc}</div><div class="text-xs text-gray-500">${h.fecha}</div></div>
+                                    <div class="font-bold text-green-600">+${h.pts}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                    
+                    <button onclick="if(confirm('¿Cerrar sesión?')) { estado.pantalla='login'; render(); }" class="w-full bg-red-50 text-red-600 rounded-2xl shadow-md p-4 flex items-center btn">
+                        <span class="text-2xl mr-3">🚪</span>
+                        <div class="font-bold">Cerrar Sesión</div>
+                    </button>
+                </div>
+            `;
+        }
+
+        function Nav() {
+            if (estado.pantalla === 'login') return '';
+            return `
+                <div class="fixed bottom-0 left-0 right-0 bg-white border-t shadow-2xl max-w-md mx-auto">
+                    <div class="flex justify-around py-2">
+                        ${[
+                            {id: 'home', icono: '🏠', txt: 'Inicio'},
+                            {id: 'mapa', icono: '🗺️', txt: 'Mapa'},
+                            {id: 'planes', icono: '📅', txt: 'Planes'},
+                            {id: 'perfil', icono: '👤', txt: 'Perfil'}
+                        ].map(n => `
+                            <button onclick="irA('${n.id}')" class="flex flex-col items-center p-2 ${estado.pantalla === n.id ? 'text-blue-600' : 'text-gray-400'}">
+                                <span class="text-2xl">${n.icono}</span>
+                                <span class="text-xs">${n.txt}</span>
+                            </button>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function render() {
+            let html = '';
+            switch(estado.pantalla) {
+                case 'login': html = PantallaLogin(); break;
+                case 'home': html = PantallaHome(); break;
+                case 'mapa': html = PantallaMapa(); break;
+                case 'detalle': html = PantallaDetalle(); break;
+                case 'planes': html = PantallaPlanes(); break;
+                case 'perfil': html = PantallaPerfil(); break;
+            }
+            document.getElementById('app').innerHTML = html + Nav();
+        }
+
+        function mostrarLogin() {
+            document.getElementById('formLogin').style.display = 'block';
+            document.getElementById('formReg').style.display = 'none';
+        }
+
+        function mostrarReg() {
+            document.getElementById('formLogin').style.display = 'none';
+            document.getElementById('formReg').style.display = 'block';
+        }
+
+        function handleLogin() {
+            const email = document.getElementById('loginEmail').value.trim();
+            const pass = document.getElementById('loginPass').value;
+            if (email && pass) login(email, pass);
+            else alerta('Completa todos los campos');
+        }
+
+        function handleReg() {
+            const nombre = document.getElementById('regNombre').value.trim();
+            const email = document.getElementById('regEmail').value.trim();
+            const pass = document.getElementById('regPass').value;
+            if (nombre && email && pass) registrar(nombre, email, pass);
+            else alerta('Completa todos los campos');
+        }
+
+        cargar();
+        render();
     </script>
 </body>
 </html>
